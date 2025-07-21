@@ -2,7 +2,7 @@
 """
 Created on Tue Dec  17:00:00 2023
 
-@author: chun
+@author: chun a
 """
 import os
 import torch
