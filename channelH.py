@@ -30,18 +30,20 @@ class Channel(nn.Module):
         sig_pwr = torch.sum(torch.abs(z_hat).square(), dim=(1, 2, 3), keepdim=True) / k    
         noi_pwr = sig_pwr / (10 ** (self.snr / 10))
         noise = torch.randn_like(z_hat) * torch.sqrt(noi_pwr/2)
-        if self.channel_type == 'Rayleigh':
-            # hc = torch.randn_like(z_hat)  wrong implement before
-            # hc = torch.randn(1, device = z_hat.device) 
-            hc = torch.randn(2, device = z_hat.device) 
         
-            # clone for in-place operation  
-            z_hat = z_hat.clone()
-            z_hat[:,:z_hat.size(1)//2] = hc[0] * z_hat[:,:z_hat.size(1)//2]
-            z_hat[:,z_hat.size(1)//2:] = hc[1] * z_hat[:,z_hat.size(1)//2:]
-            
+        if self.channel_type == 'Rayleigh':
+            hc = torch.randn(2, device = z_hat.device) / torch.sqrt(torch.tensor(2.0))
+            h_real, h_imag = hc[0], hc[1]
 
-            # z_hat = hc * z_hat
+            # decompose signal into real and image parts
+            middle_point = z_hat.size(1)//2
+            z_real, z_imag = z_hat[:,:middle_point], z_hat[:,middle_point:]
+
+            # multiply signal with channel
+            y_real = z_real * h_real - z_imag * h_imag
+            y_imag = z_real * h_imag + z_imag * h_real
+
+            z_hat = torch.cat((y_real, y_imag), dim=1)
 
         return z_hat + noise
 
@@ -54,9 +56,9 @@ if __name__ == '__main__':
     channel = Channel(channel_type='AWGN', snr=10)
     z_hat = torch.randn(64, 10, 5, 5)
     z_hat = channel(z_hat)
-    print(z_hat)
+    print(z_hat.shape)
 
     channel = Channel(channel_type='Rayleigh', snr=10)
     z_hat = torch.randn(10, 5, 5)
     z_hat = channel(z_hat)
-    print(z_hat)
+    print(z_hat.shape)
