@@ -7,7 +7,7 @@ Created on Tue Dec  11:00:00 2023
 
 import torch
 import torch.nn as nn
-from channel import Channel
+from channelH import Channel
 
 
 """ def _image_normalization(norm_type):
@@ -142,12 +142,21 @@ class _Decoder(nn.Module):
 
 
 class DeepJSCC(nn.Module):
-    def __init__(self, c, channel_type='AWGN', snr=None):
+    def __init__(self, c, channel_type='AWGN', snr=None, K_factor=1):
         super(DeepJSCC, self).__init__()
         self.encoder = _Encoder(c=c)
         if snr is not None:
-            self.channel = Channel(channel_type, snr)
+            self.channel = Channel(channel_type, snr, K_factor)
         self.decoder = _Decoder(c=c)
+
+    def Enc(self, x):
+        return self.encoder(x)
+    
+    def Chan(self, z):
+        return self.channel(z)
+    
+    def Dec(self, z_faded):
+        return self.decoder(z_faded)
 
     def forward(self, x):
         z = self.encoder(x)
@@ -156,11 +165,11 @@ class DeepJSCC(nn.Module):
         x_hat = self.decoder(z)
         return x_hat
 
-    def change_channel(self, channel_type='AWGN', snr=None):
+    def change_channel(self, channel_type='AWGN', snr=None, K_factor=1):
         if snr is None:
             self.channel = None
         else:
-            self.channel = Channel(channel_type, snr)
+            self.channel = Channel(channel_type, snr, K_factor)
 
     def get_channel(self):
         if hasattr(self, 'channel') and self.channel is not None:
@@ -174,13 +183,13 @@ class DeepJSCC(nn.Module):
 
 
 if __name__ == '__main__':
-    model = DeepJSCC(c=20)
-    print(model)
+    model = DeepJSCC(c=20, channel_type='Rician')
+    # print(model)
     x = torch.rand(1, 3, 128, 128)
     y = model(x)
     print(y.size())
-    print(y)
-    print(model.encoder.norm)
-    print(model.encoder.norm(y))
-    print(model.encoder.norm(y).size())
-    print(model.encoder.norm(y).size()[1:])
+    # print(y)
+    # print(model.encoder.norm)
+    # print(model.encoder.norm(y))
+    # print(model.encoder.norm(y).size())
+    # print(model.encoder.norm(y).size()[1:])
