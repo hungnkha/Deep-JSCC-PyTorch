@@ -50,14 +50,7 @@ class ChannelEqualization(nn.Module):
             hc = torch.randn(2, device=z_hat.device) / math.sqrt(2.0)
             h_real, h_imag = hc[0], hc[1]
 
-            # Decompose signal and apply fading via complex multiplication
-            mid_channel = z_hat.size(1) // 2
-            z_real, z_imag = z_hat[:, :mid_channel], z_hat[:, mid_channel:]
-            y_real = z_real * h_real - z_imag * h_imag
-            y_imag = z_real * h_imag + z_imag * h_real
-            z_faded = torch.cat((y_real, y_imag), dim=1)
-
-        elif self.channel_type == 'Rician':
+        if self.channel_type == 'Rician':
             # Rician fading: h = sqrt(K/(K+1))*h_los + sqrt(1/(K+1))*h_nlos
             K_linear = 10**(self.K_factor / 10)
 
@@ -74,17 +67,27 @@ class ChannelEqualization(nn.Module):
             h_real = h_los_real + h_nlos_real
             h_imag = h_los_imag + h_nlos_imag
 
-            # Decompose signal and apply fading
-            mid_channel = z_hat.size(1) // 2
-            z_real, z_imag = z_hat[:, :mid_channel], z_hat[:, mid_channel:]
-            y_real = z_real * h_real - z_imag * h_imag
-            y_imag = z_real * h_imag + z_imag * h_real
-            z_faded = torch.cat((y_real, y_imag), dim=1)
+        if self.channel_type != 'AWGN':
+            if self.flag_equalization:
+                # signal z keep unchage with equalization
+                h = h_real + 1j * h_imag
+                h_inv = 1 / h
+                h_inv_real, h_inv_imag = h_inv.real, h_inv.imag
+                # Noise with equalization
+                mid_point = noise.size(1) // 2
+                noise_real, noise_imag = noise[:,:mid_point], noise[:,mid_point:]
+                noise_equalized_real = noise_real * h_inv_real - noise_imag * h_inv_imag
+                noise_equalized_imag = noise_real * h_inv_imag + noise_imag * h_inv_real
+                noise = torch.cat((noise_equalized_real, noise_equalized_imag), dim=1)
+            else:
+                # Decompose signal and apply fading
+                mid_channel = z_hat.size(1) // 2
+                z_real, z_imag = z_hat[:, :mid_channel], z_hat[:, mid_channel:]
+                y_real = z_real * h_real - z_imag * h_imag
+                y_imag = z_real * h_imag + z_imag * h_real
+                z_hat = torch.cat((y_real, y_imag), dim=1)
 
-        else:  # AWGN
-            z_faded = z_hat
-
-        return z_faded + noise
+        return z_hat + noise
 
 
 def ratio2filtersize(x: torch.Tensor, ratio):
@@ -208,11 +211,11 @@ class _Decoder(nn.Module):
 
 
 class DeepJSCC(nn.Module):
-    def __init__(self, c, channel_type='AWGN', snr=None, K_factor=1):
+    def __init__(self, c, channel_type='AWGN', snr=None, K_factor=1, flag_equalization=True):
         super(DeepJSCC, self).__init__()
         self.encoder = _Encoder(c=c)
         if snr is not None:
-            self.channel = Channel(channel_type, snr, K_factor)
+            self.channel = ChannelEqualization(channel_type, snr, K_factor, flag_equalization)
         self.decoder = _Decoder(c=c)
 
     def Enc(self, x):
@@ -235,7 +238,7 @@ class DeepJSCC(nn.Module):
         if snr is None:
             self.channel = None
         else:
-            self.channel = Channel(channel_type, snr, K_factor)
+            self.channel = ChannelEqualization(channel_type, snr, K_factor)
 
     def get_channel(self):
         if hasattr(self, 'channel') and self.channel is not None:
@@ -249,6 +252,11 @@ class DeepJSCC(nn.Module):
 
 
 if __name__ == '__main__':
+    channel = ChannelEqualization(channel_type='Rician')
+    x = torch.randn(64, 20, 8, 8)
+    y = channel(x)
+    print(y.size())
+
     model = DeepJSCC(c=20, channel_type='Rician')
     # print(model)
     x = torch.rand(1, 3, 128, 128)
